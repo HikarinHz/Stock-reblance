@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>0050 / 正二 槓桿動態平衡工具 (FinMind 穩定版)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #333; max-width: 850px; margin: 40px auto; padding: 20px; }
+        h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .form-group { display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center; }
+        .form-group label { font-weight: bold; width: 40%; }
+        .form-group input { width: 55%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        button { background-color: #3498db; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 10px; }
+        button:hover { background-color: #2980b9; }
+        button.fetch-btn { background-color: #27ae60; }
+        button.fetch-btn:hover { background-color: #2ecc71; }
+        .status-box { padding: 15px; border-radius: 6px; margin-top: 15px; font-size: 16px; line-height: 1.5; }
+        .status-safe { background-color: #e8f8f5; border-left: 5px solid #27ae60; color: #1e8449; }
+        .status-alert { background-color: #fdedec; border-left: 5px solid #c0392b; color: #a93226; }
+        .trigger-box { background-color: #fef9e7; border-left: 5px solid #f1c40f; padding: 15px; margin-top: 15px; border-radius: 6px; color: #7d6608; }
+        .trigger-note { font-size: 13px; color: #888; margin-top: 10px; border-top: 1px dashed #ccc; padding-top: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: right; }
+        th { background-color: #f8f9fa; text-align: center; }
+        td.action-buy { color: #c0392b; font-weight: bold; } 
+        td.action-sell { color: #27ae60; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h2>0050 & 正二 槓桿動態平衡工具</h2>
+
+    <div class="card">
+        <button class="fetch-btn" onclick="fetchPrices()">🔄 自動撈取最新收盤價 (FinMind 金融資料庫)</button>
+        <div id="api-status" style="font-size: 13px; color: #666; text-align: center; margin-bottom: 15px;">無需 Proxy，原生支援跨網域直連</div>
+
+        <div class="form-group">
+            <label>0050 股價 (元)</label>
+            <input type="number" id="price50" step="0.05">
+        </div>
+        <div class="form-group">
+            <label>00631L 股價 (元)</label>
+            <input type="number" id="price2x" step="0.05">
+        </div>
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+        <div class="form-group">
+            <label>0050 持有股數</label>
+            <input type="number" id="shares50" value="0">
+        </div>
+        <div class="form-group">
+            <label>00631L 持有股數</label>
+            <input type="number" id="shares2x" value="0">
+        </div>
+        <div class="form-group">
+            <label>可用閒置現金 (元)</label>
+            <input type="number" id="cash" value="0">
+        </div>
+        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+        <div class="form-group">
+            <label>目標總槓桿倍率</label>
+            <input type="number" id="targetLeverage" value="1.4" step="0.01" min="1" max="2">
+        </div>
+        <div class="form-group">
+            <label>容許偏差範圍 (±)</label>
+            <input type="number" id="tolerance" value="0.05" step="0.01">
+        </div>
+        
+        <button onclick="calculateRebalance()">⚡ 診斷與計算</button>
+    </div>
+
+    <div class="card" id="result-card" style="display: none;">
+        <h3>📊 診斷結果</h3>
+        
+        <div id="status-panel"></div>
+        <div id="trigger-panel" class="trigger-box" style="display:none;"></div>
+
+        <h4 style="margin-top: 25px; border-bottom: 1px solid #ccc; padding-bottom: 5px;">建議調節操作 (精準回歸目標)</h4>
+        <p>基於<b>輸入之股價</b>計算。若執行以下動作，總資產 <b><span id="res-total-value"></span></b> 元的槓桿將精準回到 <b><span id="res-target-lev"></span></b> 倍。</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>標的</th>
+                    <th>調節後目標股數</th>
+                    <th>應執行動作 (股)</th>
+                    <th>調節後佔比</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="text-align: center;">0050</td>
+                    <td id="res-shares-50"></td>
+                    <td id="res-action-50"></td>
+                    <td id="res-weight-50"></td>
+                </tr>
+                <tr>
+                    <td style="text-align: center;">00631L (正二)</td>
+                    <td id="res-shares-2x"></td>
+                    <td id="res-action-2x"></td>
+                    <td id="res-weight-2x"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // 向 FinMind 請求特定股票過去 7 天的資料 (確保能跨過週末或連假找到最新交易日)
+        async function fetchFinMindData(stockId, startDate) {
+            const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${stockId}&start_date=${startDate}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP 錯誤: ${response.status}`);
+            const json = await response.json();
+            
+            if (json.msg === "success" && json.data && json.data.length > 0) {
+                // 回傳陣列中最後一筆資料 (最新的交易日) 的收盤價
+                const latestRecord = json.data[json.data.length - 1];
+                return { price: latestRecord.close, date: latestRecord.date };
+            } else {
+                throw new Error(`查無 ${stockId} 資料或達頻率限制`);
+            }
+        }
+
+        async function fetchPrices() {
+            const statusDiv = document.getElementById('api-status');
+            statusDiv.innerHTML = "正在連線 FinMind 開放資料庫...";
+            
+            try {
+                // 計算 7 天前的日期字串 (YYYY-MM-DD)
+                const d = new Date();
+                d.setDate(d.getDate() - 7);
+                const startDate = d.toISOString().split('T')[0];
+
+                // 同時發送 0050 與 00631L 的請求
+                const [data50, data2x] = await Promise.all([
+                    fetchFinMindData('0050', startDate),
+                    fetchFinMindData('00631L', startDate)
+                ]);
+
+                document.getElementById('price50').value = data50.price;
+                document.getElementById('price2x').value = data2x.price;
+                statusDiv.innerHTML = `✅ 股價更新成功！(資料日期：${data50.date} 收盤價)`;
+
+            } catch (error) {
+                statusDiv.innerHTML = `❌ 自動抓取失敗，請手動輸入股價。(${error.message})`;
+                console.error("FinMind API Error:", error);
+            }
+        }
+
+        function calculateDriftRatio(A, B, V, targetBoundLeverage) {
+            if (A === 0 && B === 0) return null;
+            const numerator = targetBoundLeverage * V - (A + 2 * B);
+            const denominator = (A + 4 * B) - targetBoundLeverage * (A + 2 * B);
+            if (denominator === 0) return null;
+            return numerator / denominator;
+        }
+
+        function calculateRebalance() {
+            const p50 = parseFloat(document.getElementById('price50').value);
+            const p2x = parseFloat(document.getElementById('price2x').value);
+            const s50 = parseFloat(document.getElementById('shares50').value) || 0;
+            const s2x = parseFloat(document.getElementById('shares2x').value) || 0;
+            const cash = parseFloat(document.getElementById('cash').value) || 0;
+            const leverage = parseFloat(document.getElementById('targetLeverage').value);
+            const tolerance = parseFloat(document.getElementById('tolerance').value);
+
+            if (!p50 || !p2x) return alert("請確保已輸入正確的股價！");
+
+            const A = p50 * s50;
+            const B = p2x * s2x;
+            const V = A + B + cash;
+
+            let currentLeverage = 0;
+            if (V > 0) currentLeverage = (A * 1 + B * 2) / V;
+
+            const upperBound = leverage + tolerance;
+            const lowerBound = leverage - tolerance;
+            const isOutliers = (currentLeverage > upperBound) || (currentLeverage < lowerBound);
+
+            document.getElementById('result-card').style.display = 'block';
+            const statusPanel = document.getElementById('status-panel');
+            const triggerPanel = document.getElementById('trigger-panel');
+
+            if (V === 0) {
+                statusPanel.className = "status-box status-safe";
+                statusPanel.innerHTML = `尚未持有資產，請參考下方目標進行建倉。`;
+                triggerPanel.style.display = 'none';
+            } else if (isOutliers) {
+                statusPanel.className = "status-box status-alert";
+                statusPanel.innerHTML = `⚠️ <b>需要調節！</b><br>
+                    目前槓桿：<b>${currentLeverage.toFixed(3)}</b> 倍<br>
+                    容許範圍：${lowerBound.toFixed(2)} ~ ${upperBound.toFixed(2)} 倍<br>
+                    <span style="font-size:14px; color:#555;">(已超過設定的偏差值，請參考下方表格執行買賣動作)</span>`;
+                triggerPanel.style.display = 'none';
+            } else {
+                statusPanel.className = "status-box status-safe";
+                statusPanel.innerHTML = `✅ <b>目前無需調節。</b><br>
+                    目前槓桿：<b>${currentLeverage.toFixed(3)}</b> 倍 (在容許範圍 ${lowerBound.toFixed(2)} ~ ${upperBound.toFixed(2)} 倍 內)`;
+                
+                const r_up = calculateDriftRatio(A, B, V, upperBound);
+                const r_dn = calculateDriftRatio(A, B, V, lowerBound);
+
+                let triggerHTML = `<b>短期靜態觸發參考：</b><ul style="margin: 5px 0 0 0; padding-left: 20px;">`;
+                
+                if (r_up !== null) {
+                    const trigP50_up = p50 * (1 + r_up);
+                    const trigP2x_up = p2x * (1 + 2 * r_up);
+                    const conditionWord = r_up > 0 ? "上漲" : "下跌";
+                    triggerHTML += `<li>0050 若單邊快速${conditionWord}至約 <b>${trigP50_up.toFixed(1)}</b> 元時，槓桿可能觸碰 ${upperBound.toFixed(2)} 倍。</li>`;
+                }
+                if (r_dn !== null) {
+                    const trigP50_dn = p50 * (1 + r_dn);
+                    const trigP2x_dn = p2x * (1 + 2 * r_dn);
+                    const conditionWord = r_dn > 0 ? "上漲" : "下跌";
+                    triggerHTML += `<li>0050 若單邊快速${conditionWord}至約 <b>${trigP50_dn.toFixed(1)}</b> 元時，槓桿可能觸碰 ${lowerBound.toFixed(2)} 倍。</li>`;
+                }
+                triggerHTML += `</ul>`;
+                triggerHTML += `<div class="trigger-note">* 註：正二 ETF 具備每日重新平衡特性。若盤整時間拉長會產生路徑依賴，使得上述點位偏移。建議定期點擊自動撈取進行診斷即可。</div>`;
+
+                triggerPanel.innerHTML = triggerHTML;
+                triggerPanel.style.display = 'block';
+            }
+
+            const weight2x = leverage - 1;
+            const weight50 = 2 - leverage;
+
+            const targetValue2x = V * weight2x;
+            const targetValue50 = V * weight50;
+
+            const targetShares2x = Math.floor(targetValue2x / p2x);
+            const targetShares50 = Math.floor(targetValue50 / p50);
+
+            const diff2x = targetShares2x - s2x;
+            const diff50 = targetShares50 - s50;
+
+            document.getElementById('res-total-value').innerText = Math.round(V).toLocaleString();
+            document.getElementById('res-target-lev').innerText = leverage.toFixed(2);
+
+            document.getElementById('res-shares-50').innerText = targetShares50.toLocaleString();
+            document.getElementById('res-weight-50').innerText = `${(weight50 * 100).toFixed(1)}%`;
+            formatAction(document.getElementById('res-action-50'), diff50);
+
+            document.getElementById('res-shares-2x').innerText = targetShares2x.toLocaleString();
+            document.getElementById('res-weight-2x').innerText = `${(weight2x * 100).toFixed(1)}%`;
+            formatAction(document.getElementById('res-action-2x'), diff2x);
+        }
+
+        function formatAction(element, diff) {
+            if (diff > 0) {
+                element.innerText = `買進 ${diff.toLocaleString()}`;
+                element.className = "action-buy";
+            } else if (diff < 0) {
+                element.innerText = `賣出 ${Math.abs(diff).toLocaleString()}`;
+                element.className = "action-sell";
+            } else {
+                element.innerText = "維持不變";
+                element.className = "";
+                element.style.color = "#95a5a6";
+            }
+        }
+    </script>
+</body>
+</html>
