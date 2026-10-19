@@ -15,6 +15,8 @@
         button:hover { background-color: #2980b9; }
         button.fetch-btn { background-color: #27ae60; }
         button.fetch-btn:hover { background-color: #2ecc71; }
+        button.apply-btn { background-color: #8e44ad; margin-top: 20px; }
+        button.apply-btn:hover { background-color: #9b59b6; }
         .status-box { padding: 15px; border-radius: 6px; margin-top: 15px; font-size: 16px; line-height: 1.5; }
         .status-safe { background-color: #e8f8f5; border-left: 5px solid #27ae60; color: #1e8449; }
         .status-alert { background-color: #fdedec; border-left: 5px solid #c0392b; color: #a93226; }
@@ -101,9 +103,13 @@
                 </tr>
             </tbody>
         </table>
+        <p style="font-size: 13px; color: #666; margin-top: 10px;">調節後剩餘現金：<b><span id="res-cash"></span></b> 元（未計手續費與交易稅）</p>
+        <button class="apply-btn" onclick="applyRebalance()">📝 套用調節結果回填至上方欄位</button>
     </div>
 
     <script>
+        let lastResult = null;
+
         // 向 FinMind 請求特定股票過去 7 天的資料 (確保能跨過週末或連假找到最新交易日)
         async function fetchFinMindData(stockId, startDate) {
             const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${stockId}&start_date=${startDate}`;
@@ -229,6 +235,10 @@
             const targetShares2x = Math.floor(targetValue2x / p2x);
             const targetShares50 = Math.floor(targetValue50 / p50);
 
+            const remainingCash = V - targetShares50 * p50 - targetShares2x * p2x;
+            lastResult = { shares50: targetShares50, shares2x: targetShares2x, cash: Math.round(remainingCash) };
+            document.getElementById('res-cash').innerText = Math.round(remainingCash).toLocaleString();
+
             const diff2x = targetShares2x - s2x;
             const diff50 = targetShares50 - s50;
 
@@ -244,13 +254,25 @@
             formatAction(document.getElementById('res-action-2x'), diff2x);
         }
 
+        // 將調節後的目標股數與剩餘現金寫回上方輸入欄位，並重新診斷
+        function applyRebalance() {
+            if (!lastResult) return;
+            document.getElementById('shares50').value = lastResult.shares50;
+            document.getElementById('shares2x').value = lastResult.shares2x;
+            document.getElementById('cash').value = lastResult.cash;
+            calculateRebalance();
+            document.getElementById('shares50').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
         function formatAction(element, diff) {
             if (diff > 0) {
                 element.innerText = `買進 ${diff.toLocaleString()}`;
                 element.className = "action-buy";
+                element.style.color = "";
             } else if (diff < 0) {
                 element.innerText = `賣出 ${Math.abs(diff).toLocaleString()}`;
                 element.className = "action-sell";
+                element.style.color = "";
             } else {
                 element.innerText = "維持不變";
                 element.className = "";
