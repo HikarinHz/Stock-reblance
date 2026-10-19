@@ -4,7 +4,6 @@
 
 ## 部署
 
-透過 GitHub Actions 部署到 GitHub Pages（`.github/workflows/pages.yml`）。
-首次使用請到 **Settings → Pages → Build and deployment → Source** 選擇 **GitHub Actions**。
+GitHub Pages 從 `gh-pages` 分支根目錄發佈，更新 `gh-pages` 上的 `index.html` 即自動重新部署。
 
 網址：https://hikarinhz.github.io/Stock-reblance/
